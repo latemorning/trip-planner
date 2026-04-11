@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
           model: 'claude-sonnet-4-6',
           max_tokens: 4096,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          tools: [{ type: 'advisor_20260301' as any, name: 'advisor', model: 'claude-opus-4-6' }],
+          tools: [{ type: 'advisor_20260301', name: 'advisor', model: 'claude-opus-4-6' } as any],
           system: SYSTEM_PROMPT,
           messages: [{ role: 'user', content: userPrompt }],
         })
