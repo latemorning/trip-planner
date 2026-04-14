@@ -10,6 +10,86 @@
 
 ---
 
+## 구현 현황 (2026-04-14 기준)
+
+### Task 완료 현황
+
+| Task | 내용 | 상태 |
+|------|------|------|
+| Task 1 | 프로젝트 스캐폴딩 + Jest 설정 | ✅ 완료 |
+| Task 2 | TypeScript 타입 정의 | ✅ 완료 |
+| Task 3 | lib/storage.ts | ✅ 완료 |
+| Task 4 | geocode API | ✅ 완료 (Kakao → Nominatim으로 변경) |
+| Task 5 | app/api/generate/route.ts | ✅ 완료 |
+| Task 6 | components/TripForm.tsx | ✅ 완료 |
+| Task 7 | components/DayCard.tsx | ✅ 완료 |
+| Task 8 | components/RouteMap.tsx | ✅ 완료 (Kakao Maps → Naver Maps로 변경) |
+| Task 9 | components/ItineraryView.tsx | ✅ 완료 |
+| Task 10 | 페이지 연결 + 레이아웃 | ✅ 완료 |
+
+### 원본 계획 대비 변경 사항
+
+#### 지도: Kakao Maps → Naver Maps (react-naver-maps)
+- **이유:** Kakao Maps SDK 클라이언트 키 등록 제약 → NCP(Naver Cloud Platform) Maps로 전환
+- `react-naver-maps` 패키지 사용, `NavermapsProvider` + `NaverMap` + `CustomOverlay` + `Polyline`
+- NCP 콘솔에서 허용 도메인 등록 필요 (`http://localhost:3000`)
+- `MapErrorBoundary` 추가: 도메인 미등록 시 graceful fallback
+
+#### Geocoding: Kakao Local API → Nominatim (OpenStreetMap)
+- **이유:** Kakao REST API 키 불필요, 서버사이드 무료 사용 가능
+- `lib/geocode-server.ts`: Nominatim 호출 + 인메모리 캐시 (1.1초 rate limit)
+- `lib/geocode-cache.ts`: 요청 간 캐시 공유
+
+#### 경로 표시: 도로 경로 → 직선 연결
+- 초기: Naver Directions 15 API로 도로 경로 구현 (`app/api/directions/route.ts`)
+- 최종: 사용자 요청으로 직선 연결로 변경
+- `destWaypoints`: 출발지 30km 이내 활동 제외 → 목적지 중심 지도 뷰
+- `mapKey = JSON.stringify(activityWaypoints)`: geocoding 완료 후 NaverMap remount
+
+#### 추가 구현 (계획에 없던 항목)
+
+| 항목 | 파일 | 내용 |
+|------|------|------|
+| 오피넷 연료비 | `app/api/generate/route.ts` | 실시간 휘발유 가격 조회해 이동 비용 산정 |
+| 출발지·인원 입력 | `types/index.ts`, `TripForm.tsx` | origin, adults, children, savedDestinations 필드 추가 |
+| 개발 mock 모드 | `lib/mock-itinerary.ts` | `USE_MOCK_API=true` 시 Claude API 미호출, coords 포함 mock 데이터 즉시 반환 |
+| Mock 재생성 스크립트 | `scripts/gen-mock.mjs` | 실제 Claude API + Nominatim으로 mock 데이터 갱신 |
+| 서버사이드 일괄 geocoding | `app/api/generate/route.ts` | generate 시 모든 location을 서버에서 geocoding해 coords 포함 응답 |
+
+### 현재 파일 구조 (실제)
+
+| 파일 | 역할 |
+|------|------|
+| `types/index.ts` | 공유 타입 (TripInput, Day, Activity, Itinerary, SavedDestination) |
+| `lib/storage.ts` | localStorage 일정·즐겨찾기 저장/불러오기 |
+| `lib/geocode.ts` | 클라이언트 geocoding 헬퍼 (`/api/geocode` 경유) |
+| `lib/geocode-server.ts` | 서버 Nominatim geocoding + 인메모리 캐시 |
+| `lib/geocode-cache.ts` | geocoding 인메모리 캐시 |
+| `lib/mock-itinerary.ts` | 개발용 mock 일정 데이터 (coords 포함, 4일 27개 활동) |
+| `app/api/generate/route.ts` | Claude API 일정 생성 + 오피넷 유가 + geocoding 일괄 처리 |
+| `app/api/geocode/route.ts` | 단건 Nominatim geocoding 프록시 |
+| `app/api/directions/route.ts` | Naver Directions 15 API (구현됨, 현재 미사용) |
+| `components/TripForm.tsx` | 여행 조건 입력 폼 |
+| `components/DayCard.tsx` | 하루 일정 카드 + 인라인 편집 |
+| `components/RouteMap.tsx` | Naver Maps 지도 + 마커 + 직선 경로 폴리라인 |
+| `components/ItineraryView.tsx` | 날짜 탭 + DayCard + RouteMap 2단 레이아웃 |
+| `app/page.tsx` | 홈 페이지 — TripForm |
+| `app/itinerary/page.tsx` | 일정 페이지 — ItineraryView |
+| `scripts/gen-mock.mjs` | mock 데이터 재생성 스크립트 |
+
+### 환경 변수 (실제)
+
+| 변수 | 필수 | 용도 |
+|------|------|------|
+| `ANTHROPIC_API_KEY` | ✅ | Claude API 일정 생성 |
+| `NCP_CLIENT_ID` | ✅ | Naver Maps 서버 인증 |
+| `NCP_CLIENT_SECRET` | ✅ | Naver Maps 서버 인증 |
+| `NEXT_PUBLIC_NCP_KEY_ID` | ✅ | Naver Maps 브라우저 렌더링 |
+| `OPINET_API_KEY` | 선택 | 실시간 유가 조회 (없으면 1,680원/L 기본값) |
+| `USE_MOCK_API` | 선택 | `true` 설정 시 Claude API 미호출 |
+
+---
+
 ## File Map
 
 | 파일 | 역할 |
