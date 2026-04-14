@@ -5,12 +5,7 @@ import { buildMockNDJSON, MOCK_ORIGIN_COORDS } from '@/lib/mock-itinerary'
 import { geocodeLocations } from '@/lib/geocode-server'
 
 function getClient() {
-  return new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    defaultHeaders: {
-      'anthropic-beta': 'advisor-tool-2026-03-01',
-    },
-  })
+  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 }
 
 // 오피넷 실시간 휘발유 평균가 조회
@@ -159,7 +154,6 @@ export async function POST(req: NextRequest) {
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      tools: [{ type: 'advisor_20260301', name: 'advisor', model: 'claude-opus-4-6' } as any],
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userPrompt }],
     })
