@@ -54,13 +54,13 @@ app/
   api/
     generate/route.ts       # Claude API 호출 + 오피넷 유가 + geocoding 일괄 처리
     geocode/route.ts        # 단건 Nominatim geocoding (클라이언트 요청용)
-    directions/route.ts     # Naver Directions 15 API (구현됨, 현재 미사용)
+    directions/route.ts     # Naver Directions 15 API (도로 경로 조회)
 
 components/
   TripForm.tsx              # 여행 조건 입력 폼
   ItineraryView.tsx         # 날짜 탭 + 지도 레이아웃
   DayCard.tsx               # 하루 일정 카드 (인라인 편집)
-  RouteMap.tsx              # Naver Maps 지도 + 마커 + 직선 경로 폴리라인
+  RouteMap.tsx              # Naver Maps 지도 + 마커 + 도로 경로 폴리라인
 
 lib/
   geocode.ts                # 클라이언트 geocoding 헬퍼 (API 라우트 경유)
@@ -78,10 +78,27 @@ types/index.ts              # TripInput, Day, Activity, Itinerary 타입
 ### 일정 생성 플로우
 
 1. `TripForm` → `/api/generate` POST
-2. 서버: 오피넷 유가 조회 → Claude API(Sonnet + Advisor) → NDJSON 파싱
-3. 서버: 모든 `location` 필드를 일괄 geocoding (캐시 활용)
-4. 응답: `{ days: Day[], originCoords }` (coords 포함)
-5. 클라이언트: `localStorage`에 저장 → `/itinerary` 리다이렉트
+2. 클라이언트: 폼이 `LoadingView`로 교체되어 단계별 진행 상태 표시 (보통 30~60초)
+3. 서버: 오피넷 유가 조회 → Claude API(Sonnet + Advisor) → NDJSON 파싱
+4. 서버: 모든 `location` 필드를 일괄 geocoding (캐시 활용)
+5. 응답: `{ days: Day[], originCoords }` (coords 포함)
+6. 클라이언트: `localStorage`에 저장 → `/itinerary` 리다이렉트
+
+### 로딩 화면 (`LoadingView`)
+
+생성 요청 후 폼 카드가 로딩 카드로 교체되며, 실제 서버 처리 단계에 맞춰 메시지가 순차적으로 전환됩니다 (7초 간격).
+
+| 단계 | 아이콘 | 메시지 |
+|------|--------|--------|
+| 1 | ⛽ | 유가 정보를 확인하고 있어요 |
+| 2 | 🤖 | AI가 최적 일정을 만들고 있어요 |
+| 3 | 🗺️ | 장소별 지도 위치를 찾고 있어요 |
+| 4 | ✨ | 일정을 완성하고 있어요 |
+
+- 파동 링 애니메이션으로 진행 중임을 시각적으로 표현
+- 하단 점 인디케이터(pill)로 현재 단계 위치 표시
+- 목적지명 포함 ("경주 여행 일정 생성 중...")
+- "보통 30~60초 정도 걸려요" 안내 문구
 
 ### Geocoding 전략
 

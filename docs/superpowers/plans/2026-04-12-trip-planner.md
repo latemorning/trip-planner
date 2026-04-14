@@ -58,6 +58,7 @@
 | 개발 mock 모드 | `lib/mock-itinerary.ts` | `USE_MOCK_API=true` 시 Claude API 미호출, coords 포함 mock 데이터 즉시 반환 |
 | Mock 재생성 스크립트 | `scripts/gen-mock.mjs` | 실제 Claude API + Nominatim으로 mock 데이터 갱신 |
 | 서버사이드 일괄 geocoding | `app/api/generate/route.ts` | generate 시 모든 location을 서버에서 geocoding해 coords 포함 응답 |
+| 로딩 화면 | `app/page.tsx` (`LoadingView`) | 일정 생성 중 폼을 로딩 카드로 교체. 파동 애니메이션 + 4단계 메시지 순차 전환 (7초 간격) |
 
 ### 현재 파일 구조 (실제)
 
@@ -76,7 +77,7 @@
 | `components/DayCard.tsx` | 하루 일정 카드 + 인라인 편집 |
 | `components/RouteMap.tsx` | Naver Maps 지도 + 마커 + 도로 경로 폴리라인 (null coords 활동 경유지 제외) |
 | `components/ItineraryView.tsx` | 날짜 탭 + DayCard + RouteMap 2단 레이아웃 |
-| `app/page.tsx` | 홈 페이지 — TripForm |
+| `app/page.tsx` | 홈 페이지 — TripForm + LoadingView (생성 중 단계별 진행 표시) |
 | `app/itinerary/page.tsx` | 일정 페이지 — ItineraryView |
 | `scripts/gen-mock.mjs` | mock 데이터 재생성 스크립트 |
 
