@@ -99,9 +99,16 @@
 location 문자열
   → 인메모리 캐시 확인
   → Nominatim (OSM) — 1 req/sec
-  → null이면 Kakao Local 키워드 검색 API (KAKAO_REST_API_KEY 필요)
+  → null이면 Kakao 키워드 검색 (지역 제한 — 목적지 좌표 ±0.45° 바운딩박스)
+  → null이면 Kakao 키워드 검색 (전국 — rect 없이)
   → 그래도 null → coords = undefined
 ```
+
+**지역 제한 도입 배경:**
+- 목적지(예: 강릉)에서 생성한 일정의 마커 null 비율이 높은 문제 확인
+- Kakao 전국 검색 시 동명이인 장소가 다른 도시에서 매칭되는 케이스 발생
+- `geocodeLocations(locations, regionHint)`에 목적지명 전달 → 목적지 좌표 선조회 후 rect 파라미터 적용
+- 서버 로그(`[geocode] ✓/✗ 소스 "장소명"`) 추가로 디버깅 가능
 
 **coords 없는 활동 UI 처리 (`DayCard.tsx`):**
 - 번호 배지: 점선 테두리 + 흐린 색상

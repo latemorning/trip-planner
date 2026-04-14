@@ -106,8 +106,25 @@ types/index.ts              # TripInput, Day, Activity, Itinerary 타입
 location 문자열
   → 인메모리 캐시 확인 (히트 시 즉시 반환)
   → Nominatim (OpenStreetMap) — 무료, 1 req/sec 제한
-  → null이면 Kakao Local 키워드 검색 API — 한국 POI 강함
+  → null이면 Kakao 키워드 검색 (지역 제한) — 목적지 좌표 ±0.45°(~50km) 바운딩박스
+  → null이면 Kakao 키워드 검색 (전국) — rect 없이 전국 범위
   → 그래도 null이면 coords = undefined (지도 마커 없이 목록에만 표시)
+```
+
+**Kakao 지역 제한 (`rect`):**
+- `geocodeLocations(locations, regionHint)` 호출 시 목적지명(예: "강릉")을 먼저 geocoding
+- 획득한 좌표를 기준으로 `rect=minLng,minLat,maxLng,maxLat` 파라미터 추가
+- 같은 이름의 장소가 전국에 여럿 있을 때 엉뚱한 지역 매칭 방지
+- 지역 제한 검색에서 null이면 전국 검색으로 폴백 (rect 밖에 있는 장소 대응)
+
+**서버 로그:**
+일정 생성 시 각 장소별 geocoding 결과가 콘솔에 출력됩니다:
+```
+[geocode] region "강릉" → (37.7519, 128.8761)
+[geocode] ✓ Nominatim  "경포해수욕장"
+[geocode] ✓ Kakao(지역) "강릉 중앙시장"
+[geocode] ✓ Kakao(전국) "오죽헌"
+[geocode] ✗ 실패       "안목해변 커피거리"
 ```
 
 **coords가 없는 활동 UI 처리:**
