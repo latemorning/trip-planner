@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ['192.168.50.252'],
+  allowedDevOrigins: ['192.168.50.252', '218.145.237.191'],
   webpack: (config) => {
     config.watchOptions = {
       ...config.watchOptions,
