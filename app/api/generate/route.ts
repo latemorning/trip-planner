@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
 import type { TripInput, Day } from '@/types'
-import { buildMockNDJSON } from '@/lib/mock-itinerary'
+import { buildMockNDJSON, MOCK_ORIGIN_COORDS } from '@/lib/mock-itinerary'
 import { geocodeLocations } from '@/lib/geocode-server'
 
 function getClient() {
@@ -114,11 +114,10 @@ async function attachCoords(days: Day[], originLocation: string): Promise<{
 export async function POST(req: NextRequest) {
   const input: TripInput = await req.json()
 
-  // 개발/테스트 모드
+  // 개발/테스트 모드 — coords가 이미 포함된 mock 데이터를 그대로 사용 (geocoding 스킵)
   if (process.env.USE_MOCK_API === 'true') {
     const days = parseNDJSON(buildMockNDJSON(input.startDate))
-    const { days: geocodedDays, originCoords } = await attachCoords(days, input.origin)
-    return NextResponse.json({ days: geocodedDays, originCoords })
+    return NextResponse.json({ days, originCoords: MOCK_ORIGIN_COORDS })
   }
 
   const { price: gasolinePrice, source: priceSource } = await getGasolinePrice()
