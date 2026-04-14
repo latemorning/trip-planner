@@ -40,11 +40,14 @@
 - `lib/geocode-server.ts`: Nominatim 호출 + 인메모리 캐시 (1.1초 rate limit)
 - `lib/geocode-cache.ts`: 요청 간 캐시 공유
 
-#### 경로 표시: 도로 경로 → 직선 연결
+#### 경로 표시: 직선 → 도로 경로 (Naver Directions 15)
 - 초기: Naver Directions 15 API로 도로 경로 구현 (`app/api/directions/route.ts`)
-- 최종: 사용자 요청으로 직선 연결로 변경
-- `destWaypoints`: 출발지 30km 이내 활동 제외 → 목적지 중심 지도 뷰
+- 중간: 사용자 요청으로 직선 연결로 변경
+- 최종: 다시 도로 경로로 전환 (null coords 처리 포함)
+- `destWaypoints`: coords null 활동 제외 + 출발지 30km 이내 활동 제외 → Directions API 경유지
+- `roadPath`: `/api/directions` 호출로 실제 도로 경로 폴리라인 표시, API 실패 시 직선 폴백
 - `mapKey = JSON.stringify(activityWaypoints)`: geocoding 완료 후 NaverMap remount
+- 하이라이트: 전체 도로 경로 흐리게 + 선택 구간은 직선으로 앰버 강조
 
 #### 추가 구현 (계획에 없던 항목)
 
@@ -68,10 +71,10 @@
 | `lib/mock-itinerary.ts` | 개발용 mock 일정 데이터 (coords 포함, 4일 27개 활동) |
 | `app/api/generate/route.ts` | Claude API 일정 생성 + 오피넷 유가 + geocoding 일괄 처리 |
 | `app/api/geocode/route.ts` | 단건 Nominatim geocoding 프록시 |
-| `app/api/directions/route.ts` | Naver Directions 15 API (구현됨, 현재 미사용) |
+| `app/api/directions/route.ts` | Naver Directions 15 API (도로 경로 조회, RouteMap에서 사용) |
 | `components/TripForm.tsx` | 여행 조건 입력 폼 |
 | `components/DayCard.tsx` | 하루 일정 카드 + 인라인 편집 |
-| `components/RouteMap.tsx` | Naver Maps 지도 + 마커 + 직선 경로 폴리라인 |
+| `components/RouteMap.tsx` | Naver Maps 지도 + 마커 + 도로 경로 폴리라인 (null coords 활동 경유지 제외) |
 | `components/ItineraryView.tsx` | 날짜 탭 + DayCard + RouteMap 2단 레이아웃 |
 | `app/page.tsx` | 홈 페이지 — TripForm |
 | `app/itinerary/page.tsx` | 일정 페이지 — ItineraryView |
@@ -85,8 +88,34 @@
 | `NCP_CLIENT_ID` | ✅ | Naver Maps 서버 인증 |
 | `NCP_CLIENT_SECRET` | ✅ | Naver Maps 서버 인증 |
 | `NEXT_PUBLIC_NCP_KEY_ID` | ✅ | Naver Maps 브라우저 렌더링 |
+| `KAKAO_REST_API_KEY` | 권장 | Nominatim null 시 geocoding fallback |
 | `OPINET_API_KEY` | 선택 | 실시간 유가 조회 (없으면 1,680원/L 기본값) |
 | `USE_MOCK_API` | 선택 | `true` 설정 시 Claude API 미호출 |
+
+### Geocoding 전략 (실제 구현)
+
+```
+location 문자열
+  → 인메모리 캐시 확인
+  → Nominatim (OSM) — 1 req/sec
+  → null이면 Kakao Local 키워드 검색 API (KAKAO_REST_API_KEY 필요)
+  → 그래도 null → coords = undefined
+```
+
+**coords 없는 활동 UI 처리 (`DayCard.tsx`):**
+- 번호 배지: 점선 테두리 + 흐린 색상
+- 제목 옆 `지도 없음` 뱃지 (hover 시 툴팁)
+- 지도 마커 없이 목록에만 표시
+
+**coords 없는 활동 지도 경로 처리 (`RouteMap.tsx`):**
+- coords null 활동은 Directions API 경유지에서 제외
+- 경유지가 2개 미만이면 Directions API 미호출, 직선 폴리라인으로 폴백
+- 경유지 기준으로 경로를 이어서 표시 (null 활동 주변 경로는 인접 좌표로 연결)
+
+**null 방지 — Claude 프롬프트 규칙:**
+- 구어체·비공식명 절대 금지 (예: "황남동 쌈밥거리" → "경주 황리단길")
+- 식당은 특정 상호명 대신 상권명으로 대체
+- 지역명 + 장소명 조합 강제 (동명이인 방지)
 
 ---
 

@@ -64,9 +64,9 @@ components/
 
 lib/
   geocode.ts                # 클라이언트 geocoding 헬퍼 (API 라우트 경유)
-  geocode-server.ts         # 서버 Nominatim 호출 + 인메모리 캐시
+  geocode-server.ts         # 서버 Nominatim → Kakao fallback geocoding + 캐시
   geocode-cache.ts          # geocoding 인메모리 캐시
-  mock-itinerary.ts         # 개발용 mock 데이터 (coords 포함, 4일 27개 활동)
+  mock-itinerary.ts         # 개발용 mock 데이터 (coords 포함, 4일 29개 활동)
   storage.ts                # localStorage 기반 일정/즐겨찾기 저장
 
 scripts/
@@ -79,16 +79,42 @@ types/index.ts              # TripInput, Day, Activity, Itinerary 타입
 
 1. `TripForm` → `/api/generate` POST
 2. 서버: 오피넷 유가 조회 → Claude API(Sonnet + Advisor) → NDJSON 파싱
-3. 서버: 모든 `location` 필드를 Nominatim으로 일괄 geocoding (캐시 활용)
+3. 서버: 모든 `location` 필드를 일괄 geocoding (캐시 활용)
 4. 응답: `{ days: Day[], originCoords }` (coords 포함)
 5. 클라이언트: `localStorage`에 저장 → `/itinerary` 리다이렉트
+
+### Geocoding 전략
+
+```
+location 문자열
+  → 인메모리 캐시 확인 (히트 시 즉시 반환)
+  → Nominatim (OpenStreetMap) — 무료, 1 req/sec 제한
+  → null이면 Kakao Local 키워드 검색 API — 한국 POI 강함
+  → 그래도 null이면 coords = undefined (지도 마커 없이 목록에만 표시)
+```
+
+**coords가 없는 활동 UI 처리:**
+- 번호 배지: 점선 테두리 + 흐린 색상으로 구분
+- 활동 제목 옆 `지도 없음` 뱃지 표시
+- hover 시 "지도 위치를 찾을 수 없습니다" 툴팁
+
+**null 발생 원인 및 예방:**
+| 원인 | 대응 |
+|------|------|
+| 구어체 장소명 (예: "황남동 쌈밥거리") | Claude 프롬프트에서 공식명 강제 |
+| 신규/소규모 POI (Kakao 미등록) | 식당은 상권명으로 대체 (예: "경주 황리단길") |
+| 동명이인 장소 | 지역명 + 장소명 조합 강제 |
+| 간헐적 API 오류 | 인메모리 캐시로 재요청 방지 |
 
 ### 지도 렌더링 동작
 
 - **마커**: 좌표가 있는 모든 활동에 번호 마커 표시, 클릭 시 해당 항목 하이라이트
-- **폴리라인**: `destWaypoints` (출발지 30km 이내 활동 제외) 기준 직선 연결
+- **경로**: `destWaypoints` (출발지 30km 이내 활동 제외 + coords null 활동 제외) 기준 도로 이동 경로
+  - `RouteMap` 마운트 시 `/api/directions`(Naver Directions 15) 호출하여 실제 도로 경로 폴리라인 표시
+  - API 실패 또는 경유지 2개 미만이면 직선 폴리라인으로 자동 폴백
+- **null coords 활동 처리**: coords가 없는 활동은 경유지에서 제외하고 경로를 이어서 표시 (지도 마커도 표시 안 함)
 - **지도 초기 위치**: `mapKey = JSON.stringify(activityWaypoints)`로 geocoding 완료 후 NaverMap remount → 목적지 중심 뷰
-- **하이라이트**: 활동 선택 시 해당 구간 강조, 나머지 흐리게 처리
+- **하이라이트**: 활동 선택 시 전체 도로 경로를 흐리게 + 선택 구간(직선)만 앰버색으로 강조
 - **MapErrorBoundary**: NCP 도메인 미등록 등 초기화 실패 시 graceful fallback
 
 ---
@@ -161,6 +187,6 @@ ANTHROPIC_API_KEY=sk-ant-... node scripts/gen-mock.mjs
 |------|------|
 | Naver Maps (react-naver-maps) | Kakao Maps SDK 도메인 등록 제약으로 전환 |
 | Nominatim geocoding | 서버사이드 무료 사용, REST key 불필요 |
-| 직선 경로 | 도로 경로(Naver Directions) 대비 단순하고 빠름, 사용자 요청 |
+| 도로 경로 (Naver Directions 15) | 실제 이동 경로 시각화. null coords 활동은 경유지 제외 후 경로 이어서 표시 |
 | generate 시 일괄 geocoding | 클라이언트 geocoding 대비 rate limit 제어 용이, 캐시 효율 높음 |
 | mock 모드 즉시 반환 | coords 포함 mock 데이터로 geocoding 시간(~23초) 제거 |

@@ -1,6 +1,6 @@
 'use client'
 
-import { Component, useMemo } from 'react'
+import { Component, useMemo, useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { NavermapsProvider, Container, NaverMap, CustomOverlay, Polyline } from 'react-naver-maps'
 import type { Day } from '@/types'
@@ -47,6 +47,7 @@ const KOREA_CENTER: Point = { lat: 36.5, lng: 127.8 }
 
 export default function RouteMap({ day, originCoords, originLabel, highlightedActivityId, onMarkerClick }: Props) {
   const allActivities = day?.activities ?? []
+  // coords가 있는 활동만 경유지로 사용 (null 제외)
   const activities = allActivities.filter((a) => a.coords)
   const activityWaypoints = activities.map((a) => a.coords!)
 
@@ -59,7 +60,27 @@ export default function RouteMap({ day, originCoords, originLabel, highlightedAc
     : activityWaypoints
   const viewPts = destWaypoints.length >= 1 ? destWaypoints : activityWaypoints
 
-  // 하이라이트 세그먼트: 이전 활동 → 선택 활동 구간 분리 (viewPts 기준)
+  // 도로 경로 (Naver Directions API). viewPts 변경 시 재조회. null이면 직선 폴백
+  const [roadPath, setRoadPath] = useState<Point[] | null>(null)
+  const viewPtsKey = JSON.stringify(viewPts)
+  useEffect(() => {
+    if (viewPts.length < 2) { setRoadPath(null); return }
+    fetch('/api/directions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ waypoints: viewPts }),
+    })
+      .then((r) => r.json())
+      .then((data: { path?: Point[] }) => setRoadPath(data.path ?? null))
+      .catch(() => setRoadPath(null))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewPtsKey])
+
+  // 실제 표시 경로: 도로 경로 우선, 없으면 직선
+  const displayPath = roadPath ?? viewPts
+
+  // 하이라이트 세그먼트: 이전 활동 → 선택 활동 직선 구간 (viewPts 기준)
+  // 도로 경로가 있어도 하이라이트 구간은 직선으로 표시 (도로 경로 분할은 복잡도 높음)
   const highlightSegment = useMemo(() => {
     if (!highlightedActivityId || viewPts.length < 2) return null
     const idx = viewPts.findIndex((p) =>
@@ -68,12 +89,10 @@ export default function RouteMap({ day, originCoords, originLabel, highlightedAc
     if (idx < 0) return null
 
     return {
-      before: viewPts.slice(0, idx),
       segment: viewPts.slice(idx > 0 ? idx - 1 : 0, idx + 1),
-      after: viewPts.slice(idx + 1),
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [highlightedActivityId, JSON.stringify(viewPts)])
+  }, [highlightedActivityId, viewPtsKey])
 
   const center = viewPts[Math.floor(viewPts.length / 2)] ?? originCoords ?? KOREA_CENTER
   // Naver zoom: 1(최소)~21(최대). 한국 전체≈7, 도시≈12, 동네≈14
@@ -88,22 +107,19 @@ export default function RouteMap({ day, originCoords, originLabel, highlightedAc
       <Container style={{ width: '100%', height: '100%' }}>
         <NaverMap key={mapKey} defaultCenter={center} defaultZoom={zoom}>
 
-          {/* 경로 폴리라인 — 하이라이트 없을 때 (목적지 활동 간 직선) */}
-          {viewPts.length >= 2 && !highlightSegment && (
+          {/* 경로 폴리라인 — 하이라이트 없을 때 (도로 경로 우선, 없으면 직선) */}
+          {displayPath.length >= 2 && !highlightSegment && (
             <>
-              <Polyline path={viewPts} strokeColor="#000000" strokeWeight={10} strokeOpacity={0.25} />
-              <Polyline path={viewPts} strokeColor="#F59E0B" strokeWeight={6} strokeOpacity={1} />
+              <Polyline path={displayPath} strokeColor="#000000" strokeWeight={10} strokeOpacity={0.25} />
+              <Polyline path={displayPath} strokeColor="#F59E0B" strokeWeight={6} strokeOpacity={1} />
             </>
           )}
 
-          {/* 하이라이트 모드: 선택 구간 강조 + 나머지 흐리게 */}
+          {/* 하이라이트 모드: 전체 도로 경로 흐리게 + 선택 구간 직선 강조 */}
           {highlightSegment && (
             <>
-              {highlightSegment.before.length >= 2 && (
-                <Polyline path={highlightSegment.before} strokeColor="#6B7280" strokeWeight={5} strokeOpacity={0.4} />
-              )}
-              {highlightSegment.after.length >= 2 && (
-                <Polyline path={highlightSegment.after} strokeColor="#6B7280" strokeWeight={5} strokeOpacity={0.4} />
+              {displayPath.length >= 2 && (
+                <Polyline path={displayPath} strokeColor="#6B7280" strokeWeight={5} strokeOpacity={0.35} />
               )}
               <Polyline path={highlightSegment.segment} strokeColor="#000000" strokeWeight={12} strokeOpacity={0.3} />
               <Polyline path={highlightSegment.segment} strokeColor="#F59E0B" strokeWeight={8} strokeOpacity={1} />
