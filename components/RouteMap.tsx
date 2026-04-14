@@ -44,84 +44,55 @@ type Props = {
 
 const KOREA_CENTER: Point = { lat: 36.5, lng: 127.8 }
 
-function closestIndex(path: Point[], target: Point): number {
-  let minDist = Infinity
-  let minIdx = 0
-  for (let i = 0; i < path.length; i++) {
-    const d = (path[i].lat - target.lat) ** 2 + (path[i].lng - target.lng) ** 2
-    if (d < minDist) { minDist = d; minIdx = i }
-  }
-  return minIdx
-}
 
 export default function RouteMap({ day, originCoords, originLabel, highlightedActivityId, onMarkerClick }: Props) {
   const allActivities = day?.activities ?? []
   const activities = allActivities.filter((a) => a.coords)
   const activityWaypoints = activities.map((a) => a.coords!)
 
-  const allWaypoints: Point[] = originCoords
-    ? [originCoords, ...activityWaypoints]
+  // 출발지(origin) 근처 활동은 폴리라인·지도 뷰에서 제외 (예: "안양 출발" 같은 이동 활동)
+  const ORIGIN_THRESHOLD = 0.3 // ~30km
+  const destWaypoints = originCoords
+    ? activityWaypoints.filter(
+        (p) => Math.hypot(p.lat - originCoords.lat, p.lng - originCoords.lng) > ORIGIN_THRESHOLD
+      )
     : activityWaypoints
+  const viewPts = destWaypoints.length >= 1 ? destWaypoints : activityWaypoints
 
-  // 하이라이트 세그먼트: 이전 활동 → 선택 활동 구간 분리
+  // 하이라이트 세그먼트: 이전 활동 → 선택 활동 구간 분리 (viewPts 기준)
   const highlightSegment = useMemo(() => {
-    if (!highlightedActivityId || allWaypoints.length < 2) return null
-    const idx = allActivities.findIndex((a) => a.id === highlightedActivityId)
+    if (!highlightedActivityId || viewPts.length < 2) return null
+    const idx = viewPts.findIndex((p) =>
+      activities.find((a) => a.id === highlightedActivityId)?.coords === p
+    )
     if (idx < 0) return null
-    const activity = allActivities[idx]
-    if (!activity.coords) return null
 
-    const prevCoords =
-      allActivities.slice(0, idx).reverse().find((a) => a.coords)?.coords
-      ?? originCoords
-      ?? null
-
-    const toIdx = closestIndex(allWaypoints, activity.coords)
-    const fromIdx = prevCoords ? closestIndex(allWaypoints, prevCoords) : 0
-
-    if (fromIdx >= toIdx) return null
     return {
-      before: allWaypoints.slice(0, fromIdx + 1),
-      segment: allWaypoints.slice(fromIdx, toIdx + 1),
-      after: allWaypoints.slice(toIdx),
-    }
-  }, [highlightedActivityId, allWaypoints, allActivities, originCoords])
-
-  const center = activityWaypoints[1] ?? activityWaypoints[0] ?? originCoords ?? KOREA_CENTER
-  // Naver zoom: 1(최소)~21(최대). 한국 전체≈7, 도시≈12, 동네≈14
-  const zoom = allWaypoints.length === 0 ? 7 : allWaypoints.length === 1 ? 14 : 11
-
-  // activities 좌표만으로 bounds 계산 (origin 제외 — origin이 수백 km 떨어지면 지도가 너무 넓어짐)
-  // activities가 1개뿐이면 allWaypoints 사용
-  const mapBounds = useMemo(() => {
-    const pts = activityWaypoints.length >= 2
-      ? activityWaypoints
-      : allWaypoints.length >= 2 ? allWaypoints : null
-    if (!pts) return undefined
-    const lats = pts.map(p => p.lat)
-    const lngs = pts.map(p => p.lng)
-    const latSpan = Math.max(...lats) - Math.min(...lats)
-    const lngSpan = Math.max(...lngs) - Math.min(...lngs)
-    const latPad = Math.max(latSpan * 0.2, 0.02)
-    const lngPad = Math.max(lngSpan * 0.2, 0.02)
-    return {
-      ne: { lat: Math.max(...lats) + latPad, lng: Math.max(...lngs) + lngPad },
-      sw: { lat: Math.min(...lats) - latPad, lng: Math.min(...lngs) - lngPad },
+      before: viewPts.slice(0, idx),
+      segment: viewPts.slice(idx > 0 ? idx - 1 : 0, idx + 1),
+      after: viewPts.slice(idx + 1),
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(activityWaypoints)])
+  }, [highlightedActivityId, JSON.stringify(viewPts)])
+
+  const center = viewPts[Math.floor(viewPts.length / 2)] ?? originCoords ?? KOREA_CENTER
+  // Naver zoom: 1(최소)~21(최대). 한국 전체≈7, 도시≈12, 동네≈14
+  const zoom = viewPts.length === 0 ? 7 : viewPts.length === 1 ? 14 : 11
+
+  // geocoding 완료 시 지도를 올바른 위치로 remount시키는 key
+  const mapKey = JSON.stringify(activityWaypoints)
 
   return (
     <MapErrorBoundary>
     <NavermapsProvider ncpKeyId={process.env.NEXT_PUBLIC_NCP_KEY_ID!}>
       <Container style={{ width: '100%', height: '100%' }}>
-        <NaverMap defaultCenter={center} defaultZoom={zoom} bounds={mapBounds}>
+        <NaverMap key={mapKey} defaultCenter={center} defaultZoom={zoom}>
 
-          {/* 경로 폴리라인 — 하이라이트 없을 때 */}
-          {allWaypoints.length >= 2 && !highlightSegment && (
+          {/* 경로 폴리라인 — 하이라이트 없을 때 (목적지 활동 간 직선) */}
+          {viewPts.length >= 2 && !highlightSegment && (
             <>
-              <Polyline path={allWaypoints} strokeColor="#000000" strokeWeight={10} strokeOpacity={0.25} />
-              <Polyline path={allWaypoints} strokeColor="#F59E0B" strokeWeight={6} strokeOpacity={1} />
+              <Polyline path={viewPts} strokeColor="#000000" strokeWeight={10} strokeOpacity={0.25} />
+              <Polyline path={viewPts} strokeColor="#F59E0B" strokeWeight={6} strokeOpacity={1} />
             </>
           )}
 
