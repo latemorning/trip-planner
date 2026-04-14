@@ -56,8 +56,52 @@ async function callKakao(location: string, regionCoords?: Coords): Promise<Coord
 }
 
 /**
+ * 정확한 쿼리 실패 시 시도할 단순화 변형 목록을 생성한다.
+ *
+ * 변형 규칙:
+ * 1. 앞부분 지역명 제거 ("강릉 초당순두부마을" → "초당순두부마을")
+ * 2. ~마을/~거리/~골목 등 접미사 제거 ("초당순두부마을" → "초당순두부")
+ * 3. 1+2 동시 적용 ("강릉 초당순두부마을" → "초당순두부")
+ * 4. 긴 복합 명칭 앞 2어절만 사용 ("참소리축음기에디슨과학박물관" → "참소리박물관")
+ */
+function getQueryVariants(location: string): string[] {
+  const variants: string[] = []
+
+  // 1. 앞 지역명 제거 (1~5자 + 공백)
+  const withoutPrefix = location.replace(/^[가-힣]{1,5}\s+/, '')
+  if (withoutPrefix !== location && withoutPrefix.length > 1) {
+    variants.push(withoutPrefix)
+  }
+
+  // 2. 뒷부분 접미사 제거
+  const SUFFIXES = /\s*(마을|거리|골목|단지|지구|나들목|IC)$/
+  const withoutSuffix = location.replace(SUFFIXES, '')
+  if (withoutSuffix !== location && withoutSuffix.length > 1) {
+    variants.push(withoutSuffix)
+  }
+
+  // 3. prefix + suffix 동시 제거
+  const withoutBoth = withoutPrefix.replace(SUFFIXES, '')
+  if (
+    withoutBoth !== withoutPrefix &&
+    withoutBoth !== withoutSuffix &&
+    withoutBoth.length > 1
+  ) {
+    variants.push(withoutBoth)
+  }
+
+  // 4. 긴 한 단어 복합명 → 첫 2~3자 + "박물관/미술관/공원" 키워드
+  if (!location.includes(' ') && location.length > 10) {
+    const museumMatch = location.match(/^(.{2,5})(박물관|미술관|공원|수족관|아쿠아리움|테마파크)/)
+    if (museumMatch) variants.push(museumMatch[1] + museumMatch[2])
+  }
+
+  return [...new Set(variants)].filter((v) => v !== location)
+}
+
+/**
  * 여러 장소명을 서버에서 일괄 geocoding.
- * 순서: 캐시 확인 → Nominatim → (null이면) Kakao(지역 제한) → Kakao(전국)
+ * 순서: 캐시 확인 → Nominatim → Kakao(지역 제한) → Kakao(전국) → Kakao(단순화 쿼리 변형)
  * regionHint: 목적지 명칭 (예: "강릉"). Kakao 검색 범위를 해당 지역으로 제한.
  */
 export async function geocodeLocations(
@@ -102,7 +146,6 @@ export async function geocodeLocations(
 
     // 2단계: Kakao (지역 제한)
     const kakaoRegionCoords = regionCoords ? await callKakao(location, regionCoords) : null
-
     if (kakaoRegionCoords) {
       setCached(location, kakaoRegionCoords)
       result[location] = kakaoRegionCoords
@@ -110,12 +153,31 @@ export async function geocodeLocations(
       continue
     }
 
-    // 3단계: Kakao (전국 — 지역 제한 시 rect 밖이거나 regionCoords 없는 경우)
+    // 3단계: Kakao (전국)
     const kakaoCoords = await callKakao(location)
-    setCached(location, kakaoCoords)
-    result[location] = kakaoCoords
     if (kakaoCoords) {
+      setCached(location, kakaoCoords)
+      result[location] = kakaoCoords
       console.log(`[geocode] ✓ Kakao(전국) "${location}"`)
+      continue
+    }
+
+    // 4단계: 쿼리 단순화 변형 재시도
+    let variantCoords: Coords | null = null
+    let matchedVariant = ''
+    for (const variant of getQueryVariants(location)) {
+      variantCoords = (regionCoords ? await callKakao(variant, regionCoords) : null)
+        ?? await callKakao(variant)
+      if (variantCoords) {
+        matchedVariant = variant
+        break
+      }
+    }
+
+    setCached(location, variantCoords)
+    result[location] = variantCoords
+    if (variantCoords) {
+      console.log(`[geocode] ✓ Kakao(변형: "${matchedVariant}") "${location}"`)
     } else {
       console.log(`[geocode] ✗ 실패       "${location}"`)
     }
