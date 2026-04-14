@@ -86,26 +86,40 @@ const USER_PROMPT = `출발지: ${INPUT.origin}
 - 모든 비용(입장료·식비·숙소)은 위 인원 합산 금액으로 계산
 하루 내 동선이 효율적이도록 각 날짜를 별도의 JSON 줄로 출력해주세요.`
 
-// ── Nominatim geocoding ────────────────────────────────────
+// ── Geocoding: Nominatim → Kakao fallback ──────────────────
 const geocodeCache = new Map()
+const KAKAO_REST_API_KEY = process.env.KAKAO_REST_API_KEY
 
-async function geocode(location) {
-  if (geocodeCache.has(location)) return geocodeCache.get(location)
-  await new Promise(r => setTimeout(r, 1200)) // rate limit: 1 req/sec
+async function callNominatim(location) {
   try {
     const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1&countrycodes=kr`
     const res = await fetch(url, {
       headers: { 'User-Agent': 'TripPlannerMockGen/1.0', 'Accept-Language': 'ko' }
     })
     const data = await res.json()
-    const coords = data?.[0] ? { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) } : null
-    geocodeCache.set(location, coords)
-    console.log(`  geocoded: ${location} →`, coords ?? 'null')
-    return coords
-  } catch {
-    geocodeCache.set(location, null)
-    return null
-  }
+    return data?.[0] ? { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) } : null
+  } catch { return null }
+}
+
+async function callKakao(location) {
+  if (!KAKAO_REST_API_KEY) return null
+  try {
+    const url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(location)}&size=1`
+    const res = await fetch(url, { headers: { Authorization: `KakaoAK ${KAKAO_REST_API_KEY}` } })
+    const data = await res.json()
+    const doc = data?.documents?.[0]
+    return doc ? { lat: parseFloat(doc.y), lng: parseFloat(doc.x) } : null
+  } catch { return null }
+}
+
+async function geocode(location) {
+  if (geocodeCache.has(location)) return geocodeCache.get(location)
+  await new Promise(r => setTimeout(r, 1200)) // Nominatim rate limit: 1 req/sec
+  const nominatim = await callNominatim(location)
+  const coords = nominatim ?? await callKakao(location)
+  geocodeCache.set(location, coords)
+  console.log(`  geocoded [${nominatim ? 'Nominatim' : coords ? 'Kakao' : 'null'}]: ${location} →`, coords ?? 'null')
+  return coords
 }
 
 // ── 메인 ──────────────────────────────────────────────────
