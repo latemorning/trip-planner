@@ -105,10 +105,12 @@ types/index.ts              # TripInput, Day, Activity, Itinerary 타입
 ```
 location 문자열
   → 인메모리 캐시 확인 (히트 시 즉시 반환)
-  → Nominatim (OpenStreetMap) — 무료, 1 req/sec 제한
-  → null이면 Kakao 키워드 검색 (지역 제한) — 목적지 좌표 ±0.45°(~50km) 바운딩박스
+  → Kakao 키워드 검색 (지역 제한) — 목적지 좌표 ±0.45°(~50km) 바운딩박스
   → null이면 Kakao 키워드 검색 (전국) — rect 없이 전국 범위
+  → null이면 쿼리 단순화 변형 재시도 (지역/전국 각각)
   → 그래도 null이면 coords = undefined (지도 마커 없이 목록에만 표시)
+
+모든 장소를 Promise.all로 병렬 처리 — 이전 Nominatim 순차 방식(~27초) 대비 ~2-3초로 단축
 ```
 
 **Kakao 지역 제한 (`rect`):**
