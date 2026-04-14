@@ -1,18 +1,119 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import TripForm from '@/components/TripForm'
 import type { TripInput, Itinerary, Day } from '@/types'
 import { saveItinerary } from '@/lib/storage'
 
+const LOADING_STEPS = [
+  { icon: '⛽', text: '유가 정보를 확인하고 있어요' },
+  { icon: '🤖', text: 'AI가 최적 일정을 만들고 있어요' },
+  { icon: '🗺️', text: '장소별 지도 위치를 찾고 있어요' },
+  { icon: '✨', text: '일정을 완성하고 있어요' },
+]
+
+function LoadingView({ destination }: { destination: string }) {
+  const [stepIdx, setStepIdx] = useState(0)
+  const [dotCount, setDotCount] = useState(1)
+
+  useEffect(() => {
+    const stepTimer = setInterval(() => {
+      setStepIdx((i) => Math.min(i + 1, LOADING_STEPS.length - 1))
+    }, 7000)
+    const dotTimer = setInterval(() => {
+      setDotCount((d) => (d % 3) + 1)
+    }, 500)
+    return () => { clearInterval(stepTimer); clearInterval(dotTimer) }
+  }, [])
+
+  const step = LOADING_STEPS[stepIdx]
+
+  return (
+    <div style={{
+      width: '100%',
+      maxWidth: '440px',
+      background: 'var(--surface)',
+      border: '1px solid var(--border)',
+      borderRadius: '16px',
+      padding: '48px 28px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '28px',
+    }}>
+      {/* 애니메이션 아이콘 */}
+      <div style={{ position: 'relative', width: '72px', height: '72px' }}>
+        {/* 바깥 파동 */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          borderRadius: '50%',
+          border: '2px solid rgba(245,158,11,0.3)',
+          animation: 'ping 1.8s cubic-bezier(0,0,0.2,1) infinite',
+        }} />
+        <div style={{
+          position: 'absolute', inset: '8px',
+          borderRadius: '50%',
+          border: '2px solid rgba(245,158,11,0.2)',
+          animation: 'ping 1.8s cubic-bezier(0,0,0.2,1) infinite',
+          animationDelay: '0.4s',
+        }} />
+        {/* 아이콘 */}
+        <div style={{
+          position: 'absolute', inset: '14px',
+          borderRadius: '50%',
+          background: 'var(--accent-dim)',
+          border: '1px solid rgba(245,158,11,0.4)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '20px',
+        }}>{step.icon}</div>
+      </div>
+
+      {/* 텍스트 */}
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text)', marginBottom: '6px' }}>
+          {destination} 여행 일정 생성 중{'.'.repeat(dotCount)}
+        </div>
+        <div style={{ fontSize: '13px', color: 'var(--text-2)' }}>{step.text}</div>
+      </div>
+
+      {/* 스텝 인디케이터 */}
+      <div style={{ display: 'flex', gap: '6px' }}>
+        {LOADING_STEPS.map((s, i) => (
+          <div key={i} style={{
+            width: i === stepIdx ? '20px' : '6px',
+            height: '6px',
+            borderRadius: '100px',
+            background: i <= stepIdx ? 'var(--accent)' : 'var(--border)',
+            transition: 'all 0.4s ease',
+          }} />
+        ))}
+      </div>
+
+      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+        보통 30~60초 정도 걸려요
+      </div>
+
+      <style>{`
+        @keyframes ping {
+          75%, 100% { transform: scale(1.5); opacity: 0; }
+        }
+      `}</style>
+    </div>
+  )
+}
+
 export default function HomePage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [loadingDest, setLoadingDest] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit(input: TripInput) {
     setLoading(true)
+    setLoadingDest(input.destination)
     setError(null)
 
     try {
@@ -121,17 +222,21 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* 폼 카드 */}
-      <div style={{
-        width: '100%',
-        maxWidth: '440px',
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        borderRadius: '16px',
-        padding: '28px 24px',
-      }}>
-        <TripForm onSubmit={handleSubmit} loading={loading} />
-      </div>
+      {/* 폼 카드 또는 로딩 화면 */}
+      {loading ? (
+        <LoadingView destination={loadingDest} />
+      ) : (
+        <div style={{
+          width: '100%',
+          maxWidth: '440px',
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: '16px',
+          padding: '28px 24px',
+        }}>
+          <TripForm onSubmit={handleSubmit} loading={loading} />
+        </div>
+      )}
     </main>
   )
 }
