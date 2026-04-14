@@ -89,7 +89,7 @@
 | `NCP_CLIENT_ID` | ✅ | Naver Maps 서버 인증 |
 | `NCP_CLIENT_SECRET` | ✅ | Naver Maps 서버 인증 |
 | `NEXT_PUBLIC_NCP_KEY_ID` | ✅ | Naver Maps 브라우저 렌더링 |
-| `KAKAO_REST_API_KEY` | 권장 | Nominatim null 시 geocoding fallback |
+| `KAKAO_REST_API_KEY` | 불필요 | Naver Geocoding으로 대체됨 |
 | `OPINET_API_KEY` | 선택 | 실시간 유가 조회 (없으면 1,680원/L 기본값) |
 | `USE_MOCK_API` | 선택 | `true` 설정 시 Claude API 미호출 |
 
@@ -98,9 +98,10 @@
 ```
 location 문자열
   → 인메모리 캐시 확인
-  → Nominatim (OSM) — 1 req/sec
-  → null이면 Kakao 키워드 검색 (지역 제한 — 목적지 좌표 ±0.45° 바운딩박스)
-  → null이면 Kakao 키워드 검색 (전국 — rect 없이)
+  → Naver Geocoding API (지역 기준, coordinate 파라미터)  ← NCP_CLIENT_ID/SECRET 재사용
+  → null이면 Naver Geocoding API (전국)
+  → null이면 쿼리 변형 재시도 (Naver)
+  → null이면 Nominatim (OSM, 순차, Naver 장애 대비)
   → 그래도 null → coords = undefined
 ```
 

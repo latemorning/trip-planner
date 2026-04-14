@@ -2,8 +2,43 @@ import { getCached, setCached } from './geocode-cache'
 
 type Coords = { lat: number; lng: number }
 
-// ── Nominatim ────────────────────────────────────────────
-const NOMINATIM_DELAY = 1100 // max 1 req/sec
+// ── Naver Maps Geocoding (NCP) ────────────────────────────
+// 기존 NCP_CLIENT_ID / NCP_CLIENT_SECRET 그대로 사용 — 별도 키 불필요
+// NCP 콘솔에서 "Geocoding" 서비스 활성화 필요
+async function callNaver(location: string, regionCoords?: Coords): Promise<Coords | null> {
+  const clientId = process.env.NCP_CLIENT_ID
+  const clientSecret = process.env.NCP_CLIENT_SECRET
+  if (!clientId || !clientSecret) return null
+  try {
+    const params = new URLSearchParams({ query: location })
+    if (regionCoords) {
+      // coordinate=lng,lat: 해당 좌표 근처 결과를 우선 정렬 (지역 정확도 향상)
+      params.set('coordinate', `${regionCoords.lng},${regionCoords.lat}`)
+    }
+    const url = `https://maps.apigw.ntruss.com/map-geocode/v2/geocode?${params}`
+    const res = await fetch(url, {
+      headers: {
+        'x-ncp-apigw-api-key-id': clientId,
+        'x-ncp-apigw-api-key': clientSecret,
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) {
+      if (!regionCoords) console.warn(`[geocode] Naver HTTP ${res.status} for "${location}"`)
+      return null
+    }
+    const data = await res.json()
+    const addr = data?.addresses?.[0]
+    if (!addr) return null
+    return { lat: parseFloat(addr.y), lng: parseFloat(addr.x) }
+  } catch {
+    return null
+  }
+}
+
+// ── Nominatim fallback ────────────────────────────────────
+const NOMINATIM_DELAY = 1100
 let lastNominatimMs = 0
 
 async function callNominatim(location: string): Promise<Coords | null> {
@@ -26,35 +61,7 @@ async function callNominatim(location: string): Promise<Coords | null> {
   }
 }
 
-// ── Kakao ────────────────────────────────────────────────
-async function callKakao(location: string, regionCoords?: Coords): Promise<Coords | null> {
-  const key = process.env.KAKAO_REST_API_KEY
-  if (!key) return null
-  try {
-    const params = new URLSearchParams({ query: location, size: '1' })
-    if (regionCoords) {
-      const d = 0.45 // ~50km bounding box
-      params.set('rect', `${regionCoords.lng - d},${regionCoords.lat - d},${regionCoords.lng + d},${regionCoords.lat + d}`)
-    }
-    const url = `https://dapi.kakao.com/v2/local/search/keyword.json?${params}`
-    const res = await fetch(url, {
-      headers: { Authorization: `KakaoAK ${key}` },
-      signal: AbortSignal.timeout(5000),
-    })
-    if (!res.ok) {
-      if (!regionCoords) console.warn(`[geocode] Kakao HTTP ${res.status} for "${location}"`)
-      return null
-    }
-    const data = await res.json()
-    const doc = data?.documents?.[0]
-    if (!doc) return null
-    return { lat: parseFloat(doc.y), lng: parseFloat(doc.x) }
-  } catch {
-    return null
-  }
-}
-
-// ── 쿼리 변형 ─────────────────────────────────────────────
+// ── 쿼리 단순화 변형 ──────────────────────────────────────
 function getQueryVariants(location: string): string[] {
   const variants: string[] = []
   const withoutPrefix = location.replace(/^[가-힣]{1,5}\s+/, '')
@@ -75,18 +82,26 @@ function getQueryVariants(location: string): string[] {
   return [...new Set(variants)].filter((v) => v !== location)
 }
 
-/** Kakao만으로 한 장소 geocoding 시도 (지역 → 전국 → 변형). null이면 Kakao 불가 */
-async function tryKakao(location: string, regionCoords: Coords | null): Promise<{ coords: Coords; source: string } | null> {
+/** Naver Geocoding으로 한 장소 시도: 지역 기준 → 전국 → 쿼리 변형 */
+async function tryNaver(
+  location: string,
+  regionCoords: Coords | null,
+): Promise<{ coords: Coords; source: string } | null> {
+  // 지역 기준 (coordinate 파라미터로 근처 우선 정렬)
   if (regionCoords) {
-    const c = await callKakao(location, regionCoords)
-    if (c) return { coords: c, source: 'Kakao(지역)' }
+    const c = await callNaver(location, regionCoords)
+    if (c) return { coords: c, source: 'Naver(지역)' }
   }
-  const c = await callKakao(location)
-  if (c) return { coords: c, source: 'Kakao(전국)' }
+  // 전국
+  const c = await callNaver(location)
+  if (c) return { coords: c, source: 'Naver(전국)' }
 
+  // 쿼리 변형
   for (const variant of getQueryVariants(location)) {
-    const vc = (regionCoords ? await callKakao(variant, regionCoords) : null) ?? await callKakao(variant)
-    if (vc) return { coords: vc, source: `Kakao(변형:"${variant}")` }
+    const vc =
+      (regionCoords ? await callNaver(variant, regionCoords) : null) ??
+      await callNaver(variant)
+    if (vc) return { coords: vc, source: `Naver(변형:"${variant}")` }
   }
   return null
 }
@@ -94,10 +109,10 @@ async function tryKakao(location: string, regionCoords: Coords | null): Promise<
 /**
  * 여러 장소명을 서버에서 일괄 geocoding.
  *
- * Phase 1 (병렬): Kakao 전체 동시 호출 — 정상 시 ~2-3초
- * Phase 2 (순차): Kakao 실패 장소만 Nominatim 재시도 — Kakao 장애 대비
+ * Phase 1 (병렬): Naver Geocoding API 동시 호출 — NCP 기존 키 사용
+ * Phase 2 (순차): Naver 실패 장소만 Nominatim 재시도 — Naver 장애 대비
  *
- * regionHint: 목적지 명칭. Kakao 검색 범위를 해당 지역으로 제한.
+ * regionHint: 목적지 명칭 (예: "강릉"). 검색 결과를 해당 지역 근처로 우선 정렬.
  */
 export async function geocodeLocations(
   locations: string[],
@@ -106,7 +121,6 @@ export async function geocodeLocations(
   const unique = [...new Set(locations.filter(Boolean))]
   const result: Record<string, Coords | null> = {}
 
-  // 캐시 히트 먼저 처리
   const uncached = unique.filter((loc) => {
     const cached = getCached(loc)
     if (cached !== undefined) { result[loc] = cached; return false }
@@ -117,22 +131,22 @@ export async function geocodeLocations(
   // 목적지 기준 좌표 획득
   let regionCoords: Coords | null = null
   if (regionHint) {
-    regionCoords = await callKakao(regionHint)
+    regionCoords = await callNaver(regionHint)
     console.log(regionCoords
       ? `[geocode] region "${regionHint}" → (${regionCoords.lat}, ${regionCoords.lng})`
-      : `[geocode] region "${regionHint}" → null (Kakao 키 오류 가능성)`
+      : `[geocode] region "${regionHint}" → null (NCP Geocoding 서비스 활성화 확인 필요)`
     )
   }
 
-  // Phase 1: 병렬 Kakao
-  const kakaoResults = await Promise.all(
-    uncached.map((location) => tryKakao(location, regionCoords))
+  // Phase 1: 병렬 Naver Geocoding
+  const naverResults = await Promise.all(
+    uncached.map((location) => tryNaver(location, regionCoords))
   )
 
   const nominatimQueue: string[] = []
   for (let i = 0; i < uncached.length; i++) {
     const location = uncached[i]
-    const hit = kakaoResults[i]
+    const hit = naverResults[i]
     if (hit) {
       setCached(location, hit.coords)
       result[location] = hit.coords
@@ -142,11 +156,11 @@ export async function geocodeLocations(
     }
   }
 
-  // Phase 2: 순차 Nominatim (Kakao 실패 장소만)
+  // Phase 2: 순차 Nominatim (Naver 실패 장소만)
   if (nominatimQueue.length > 0) {
-    const allKakaoFailed = nominatimQueue.length === uncached.length
-    if (allKakaoFailed) console.warn('[geocode] Kakao 전체 실패 — KAKAO_REST_API_KEY 환경변수를 확인하세요')
-
+    if (nominatimQueue.length === uncached.length) {
+      console.warn('[geocode] Naver 전체 실패 — NCP 콘솔에서 Geocoding 서비스 활성화 여부를 확인하세요')
+    }
     for (const location of nominatimQueue) {
       const coords = await callNominatim(location)
       setCached(location, coords)
