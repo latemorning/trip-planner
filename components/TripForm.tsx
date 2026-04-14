@@ -9,6 +9,7 @@ const STYLES: { value: TravelStyle; emoji: string }[] = [
   { value: '관광', emoji: '🏯' },
   { value: '자연', emoji: '🌿' },
   { value: '쇼핑', emoji: '🛍️' },
+  { value: '아이', emoji: '🧒' },
 ]
 
 type Props = {

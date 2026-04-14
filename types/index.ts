@@ -1,5 +1,5 @@
 // types/index.ts
-export type TravelStyle = '맛집' | '관광' | '자연' | '쇼핑'
+export type TravelStyle = '맛집' | '관광' | '자연' | '쇼핑' | '아이'
 
 export type TripInput = {
   origin: string
