@@ -124,16 +124,22 @@ export default function DayCard({ day, onChange, highlightedActivityId, onHighli
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                  {/* 번호 배지 */}
-                  <span style={{
-                    flexShrink: 0,
-                    width: '20px', height: '20px', borderRadius: '50%',
-                    background: highlightedActivityId === activity.id ? 'var(--accent)' : 'var(--surface)',
-                    border: `1px solid ${highlightedActivityId === activity.id ? 'var(--accent)' : 'var(--border)'}`,
-                    color: highlightedActivityId === activity.id ? '#000' : 'var(--text-2)',
-                    fontSize: '11px', fontWeight: 700,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>{idx + 1}</span>
+                  {/* 번호 배지 — coords 없으면 점선 테두리로 구분 */}
+                  <span
+                    title={activity.coords ? undefined : '지도 위치를 찾을 수 없는 항목입니다'}
+                    style={{
+                      flexShrink: 0,
+                      width: '20px', height: '20px', borderRadius: '50%',
+                      background: highlightedActivityId === activity.id ? 'var(--accent)' : 'var(--surface)',
+                      border: highlightedActivityId === activity.id
+                        ? '1px solid var(--accent)'
+                        : activity.coords
+                          ? '1px solid var(--border)'
+                          : '1.5px dashed var(--text-muted)',
+                      color: highlightedActivityId === activity.id ? '#000' : activity.coords ? 'var(--text-2)' : 'var(--text-muted)',
+                      fontSize: '11px', fontWeight: 700,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>{idx + 1}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{
@@ -143,6 +149,14 @@ export default function DayCard({ day, onChange, highlightedActivityId, onHighli
                       <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {activity.title}
                       </span>
+                      {/* coords 없으면 위치 미확인 뱃지 */}
+                      {!activity.coords && (
+                        <span title="지도 위치를 찾을 수 없습니다" style={{
+                          flexShrink: 0, fontSize: '10px', color: 'var(--text-muted)',
+                          border: '1px dashed var(--text-muted)', borderRadius: '4px',
+                          padding: '0px 4px', lineHeight: '16px',
+                        }}>지도 없음</span>
+                      )}
                     </div>
                     {activity.description && (
                       <p style={{ fontSize: '12px', color: 'var(--text-2)', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
