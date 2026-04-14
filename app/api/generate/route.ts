@@ -97,7 +97,7 @@ function parseNDJSON(text: string): Day[] {
 }
 
 /** days의 모든 location을 서버 geocoding 후 coords 부착 */
-async function attachCoords(days: Day[], originLocation: string): Promise<{
+async function attachCoords(days: Day[], originLocation: string, destinationHint: string): Promise<{
   days: Day[]
   originCoords: { lat: number; lng: number } | null
 }> {
@@ -106,7 +106,7 @@ async function attachCoords(days: Day[], originLocation: string): Promise<{
   ) as string[]
   const allLocations = [...new Set([originLocation, ...activityLocations])]
 
-  const coordsMap = await geocodeLocations(allLocations)
+  const coordsMap = await geocodeLocations(allLocations, destinationHint)
 
   const geocodedDays = days.map((day) => ({
     ...day,
@@ -172,7 +172,7 @@ export async function POST(req: NextRequest) {
     }
 
     const days = parseNDJSON(fullText)
-    const { days: geocodedDays, originCoords } = await attachCoords(days, input.origin)
+    const { days: geocodedDays, originCoords } = await attachCoords(days, input.origin, input.destination)
     return NextResponse.json({ days: geocodedDays, originCoords })
   } catch (err) {
     console.error('generate error:', err)
