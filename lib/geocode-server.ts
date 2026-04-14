@@ -2,30 +2,6 @@ import { getCached, setCached } from './geocode-cache'
 
 type Coords = { lat: number; lng: number }
 
-const DELAY_MS = 1100 // Nominatim: max 1 req/sec
-
-function delay(ms: number) {
-  return new Promise((r) => setTimeout(r, ms))
-}
-
-async function callNominatim(location: string): Promise<Coords | null> {
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1&countrycodes=kr`
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'TripPlannerApp/1.0 (personal-use)',
-        'Accept-Language': 'ko',
-      },
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    if (!data?.[0]) return null
-    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
-  } catch {
-    return null
-  }
-}
-
 /**
  * Kakao Local 키워드 검색 API — 한국 POI(식당·명소·상점)에 강함
  * regionCoords가 있으면 해당 좌표 반경 ~50km 내로 검색 범위 제한 (엉뚱한 지역 매칭 방지)
@@ -60,9 +36,9 @@ async function callKakao(location: string, regionCoords?: Coords): Promise<Coord
  *
  * 변형 규칙:
  * 1. 앞부분 지역명 제거 ("강릉 초당순두부마을" → "초당순두부마을")
- * 2. ~마을/~거리/~골목 등 접미사 제거 ("초당순두부마을" → "초당순두부")
+ * 2. ~마을/~거리/~골목/IC 등 접미사 제거 ("초당순두부마을" → "초당순두부")
  * 3. 1+2 동시 적용 ("강릉 초당순두부마을" → "초당순두부")
- * 4. 긴 복합 명칭 앞 2어절만 사용 ("참소리축음기에디슨과학박물관" → "참소리박물관")
+ * 4. 긴 복합 명칭 단축 ("참소리축음기에디슨과학박물관" → "참소리박물관")
  */
 function getQueryVariants(location: string): string[] {
   const variants: string[] = []
@@ -99,9 +75,35 @@ function getQueryVariants(location: string): string[] {
   return [...new Set(variants)].filter((v) => v !== location)
 }
 
+/** 한 장소에 대해 Kakao(지역) → Kakao(전국) → 쿼리 변형 순서로 시도 */
+async function geocodeOne(
+  location: string,
+  regionCoords: Coords | null
+): Promise<{ coords: Coords | null; source: string }> {
+  // 1단계: Kakao (지역 제한)
+  if (regionCoords) {
+    const coords = await callKakao(location, regionCoords)
+    if (coords) return { coords, source: 'Kakao(지역)' }
+  }
+
+  // 2단계: Kakao (전국)
+  const coords = await callKakao(location)
+  if (coords) return { coords, source: 'Kakao(전국)' }
+
+  // 3단계: 쿼리 단순화 변형 재시도
+  for (const variant of getQueryVariants(location)) {
+    const variantCoords =
+      (regionCoords ? await callKakao(variant, regionCoords) : null) ??
+      await callKakao(variant)
+    if (variantCoords) return { coords: variantCoords, source: `Kakao(변형: "${variant}")` }
+  }
+
+  return { coords: null, source: '실패' }
+}
+
 /**
  * 여러 장소명을 서버에서 일괄 geocoding.
- * 순서: 캐시 확인 → Nominatim → Kakao(지역 제한) → Kakao(전국) → Kakao(단순화 쿼리 변형)
+ * 모든 Kakao 호출을 병렬 실행 — Nominatim 순차 대기 제거로 대폭 빠름.
  * regionHint: 목적지 명칭 (예: "강릉"). Kakao 검색 범위를 해당 지역으로 제한.
  */
 export async function geocodeLocations(
@@ -110,77 +112,40 @@ export async function geocodeLocations(
 ): Promise<Record<string, Coords | null>> {
   const unique = [...new Set(locations.filter(Boolean))]
   const result: Record<string, Coords | null> = {}
-  let nominatimCallCount = 0
 
-  // 목적지 기준 좌표 획득 → Kakao rect 필터링에 사용
+  // 캐시 히트 먼저 처리
+  const uncached = unique.filter((loc) => {
+    const cached = getCached(loc)
+    if (cached !== undefined) { result[loc] = cached; return false }
+    return true
+  })
+
+  if (uncached.length === 0) return result
+
+  // 목적지 기준 좌표 획득 (Kakao rect 필터링용)
   let regionCoords: Coords | null = null
   if (regionHint) {
-    const hintCoords = await callNominatim(regionHint) ?? await callKakao(regionHint)
-    nominatimCallCount++
-    if (hintCoords) {
-      regionCoords = hintCoords
-      console.log(`[geocode] region "${regionHint}" → (${hintCoords.lat}, ${hintCoords.lng})`)
+    regionCoords = await callKakao(regionHint)
+    if (regionCoords) {
+      console.log(`[geocode] region "${regionHint}" → (${regionCoords.lat}, ${regionCoords.lng})`)
     } else {
       console.log(`[geocode] region "${regionHint}" → 좌표 없음 (전국 검색으로 폴백)`)
     }
   }
 
-  for (const location of unique) {
-    const cached = getCached(location)
-    if (cached !== undefined) {
-      result[location] = cached
-      continue
-    }
+  // 모든 장소를 병렬로 geocoding
+  const settled = await Promise.all(
+    uncached.map(async (location) => {
+      const { coords, source } = await geocodeOne(location, regionCoords)
+      return { location, coords, source }
+    })
+  )
 
-    // 1단계: Nominatim
-    if (nominatimCallCount > 0) await delay(DELAY_MS)
-    const nominatimCoords = await callNominatim(location)
-    nominatimCallCount++
-
-    if (nominatimCoords) {
-      setCached(location, nominatimCoords)
-      result[location] = nominatimCoords
-      console.log(`[geocode] ✓ Nominatim  "${location}"`)
-      continue
-    }
-
-    // 2단계: Kakao (지역 제한)
-    const kakaoRegionCoords = regionCoords ? await callKakao(location, regionCoords) : null
-    if (kakaoRegionCoords) {
-      setCached(location, kakaoRegionCoords)
-      result[location] = kakaoRegionCoords
-      console.log(`[geocode] ✓ Kakao(지역) "${location}"`)
-      continue
-    }
-
-    // 3단계: Kakao (전국)
-    const kakaoCoords = await callKakao(location)
-    if (kakaoCoords) {
-      setCached(location, kakaoCoords)
-      result[location] = kakaoCoords
-      console.log(`[geocode] ✓ Kakao(전국) "${location}"`)
-      continue
-    }
-
-    // 4단계: 쿼리 단순화 변형 재시도
-    let variantCoords: Coords | null = null
-    let matchedVariant = ''
-    for (const variant of getQueryVariants(location)) {
-      variantCoords = (regionCoords ? await callKakao(variant, regionCoords) : null)
-        ?? await callKakao(variant)
-      if (variantCoords) {
-        matchedVariant = variant
-        break
-      }
-    }
-
-    setCached(location, variantCoords)
-    result[location] = variantCoords
-    if (variantCoords) {
-      console.log(`[geocode] ✓ Kakao(변형: "${matchedVariant}") "${location}"`)
-    } else {
-      console.log(`[geocode] ✗ 실패       "${location}"`)
-    }
+  for (const { location, coords, source } of settled) {
+    setCached(location, coords)
+    result[location] = coords
+    const icon = coords ? '✓' : '✗'
+    console.log(`[geocode] ${icon} ${source.padEnd(20)} "${location}"`)
   }
 
   return result
