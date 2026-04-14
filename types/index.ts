@@ -2,11 +2,20 @@
 export type TravelStyle = '맛집' | '관광' | '자연' | '쇼핑'
 
 export type TripInput = {
+  origin: string
   destination: string
-  startDate: string   // ISO date: "YYYY-MM-DD"
-  endDate: string     // ISO date: "YYYY-MM-DD"
+  startDate: string
+  endDate: string
   styles: TravelStyle[]
-  budget: number      // KRW 정수
+  budget: number
+  adults: number
+  children: number
+  savedDestinations: string[]  // 즐겨찾기 목적지 (근처 포함 여부 판단용)
+}
+
+export type SavedDestination = {
+  name: string
+  savedAt: string  // ISO datetime
 }
 
 export type Activity = {
@@ -25,6 +34,8 @@ export type Day = {
 }
 
 export type Itinerary = {
+  origin: string
+  originCoords?: { lat: number; lng: number }
   destination: string
   startDate: string
   endDate: string

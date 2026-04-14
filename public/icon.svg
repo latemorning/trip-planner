@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="#3B82F6"/>
+
+  <!-- Map base -->
+  <rect x="96" y="160" width="320" height="224" rx="16" fill="white" opacity="0.15"/>
+
+  <!-- Route dots and line -->
+  <!-- Dot A (bottom-left) -->
+  <circle cx="152" cy="340" r="18" fill="white" opacity="0.9"/>
+  <circle cx="152" cy="340" r="10" fill="#3B82F6"/>
+
+  <!-- Dot B (middle) -->
+  <circle cx="280" cy="290" r="14" fill="white" opacity="0.7"/>
+  <circle cx="280" cy="290" r="8" fill="#60A5FA"/>
+
+  <!-- Dashed route line -->
+  <path d="M 168 332 Q 220 310 266 292" stroke="white" stroke-width="6" stroke-linecap="round" stroke-dasharray="10 8" opacity="0.8"/>
+  <path d="M 294 282 Q 340 258 356 208" stroke="white" stroke-width="6" stroke-linecap="round" stroke-dasharray="10 8" opacity="0.8"/>
+
+  <!-- Main location pin -->
+  <path d="M 360 148 C 360 114 332 88 298 88 C 264 88 236 114 236 148 C 236 182 298 248 298 248 C 298 248 360 182 360 148 Z" fill="white"/>
+  <circle cx="298" cy="148" r="22" fill="#3B82F6"/>
+  <circle cx="298" cy="148" r="10" fill="white"/>
+</svg>

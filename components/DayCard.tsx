@@ -15,15 +15,14 @@ type Props = {
   day: Day
   onChange: (day: Day) => void
   highlightedActivityId: string | null
+  onHighlight: (id: string | null) => void
 }
 
-export default function DayCard({ day, onChange, highlightedActivityId }: Props) {
+export default function DayCard({ day, onChange, highlightedActivityId, onHighlight }: Props) {
   const [editState, setEditState] = useState<EditState | null>(null)
 
   const dateLabel = new Date(day.date + 'T00:00:00').toLocaleDateString('ko-KR', {
-    month: 'long',
-    day: 'numeric',
-    weekday: 'short',
+    month: 'long', day: 'numeric', weekday: 'short',
   })
   const totalCost = day.activities.reduce((sum, a) => sum + a.estimatedCost, 0)
 
@@ -61,100 +60,122 @@ export default function DayCard({ day, onChange, highlightedActivityId }: Props)
   }
 
   return (
-    <div className="rounded-xl border bg-white p-4 shadow-sm">
-      <div className="flex justify-between items-center mb-3">
-        <h3 className="font-semibold text-gray-800">{dateLabel}</h3>
-        <span className="text-sm text-gray-500">
-          총 ₩{totalCost.toLocaleString()}
-        </span>
+    <div style={{
+      borderRadius: 'var(--radius)', border: '1px solid var(--border)',
+      background: 'var(--surface)', padding: '16px',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+        <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>{dateLabel}</span>
+        <span style={{
+          fontSize: '12px', color: 'var(--accent)', background: 'var(--accent-dim)',
+          padding: '3px 10px', borderRadius: '100px', fontWeight: 600,
+        }}>₩{totalCost.toLocaleString()}</span>
       </div>
 
-      <ul className="flex flex-col gap-2">
-        {day.activities.map((activity) =>
+      <ul style={{ display: 'flex', flexDirection: 'column', gap: '6px', listStyle: 'none', padding: 0, margin: 0 }}>
+        {day.activities.map((activity, idx) =>
           editState?.activityId === activity.id ? (
-            <li key={activity.id} className="rounded-lg border p-3 bg-blue-50">
-              <div className="flex flex-col gap-2">
-                <input
-                  value={editState.title}
-                  onChange={(e) =>
-                    setEditState({ ...editState, title: e.target.value })
-                  }
-                  className="border rounded px-2 py-1 text-sm w-full"
-                />
-                <input
-                  value={editState.description}
-                  onChange={(e) =>
-                    setEditState({ ...editState, description: e.target.value })
-                  }
-                  className="border rounded px-2 py-1 text-sm w-full"
-                />
-                <div className="flex gap-2">
-                  <input
-                    value={editState.time}
-                    onChange={(e) =>
-                      setEditState({ ...editState, time: e.target.value })
-                    }
-                    className="border rounded px-2 py-1 text-sm w-24"
-                    placeholder="HH:MM"
-                  />
-                  <input
-                    type="number"
-                    value={editState.estimatedCost}
-                    onChange={(e) =>
-                      setEditState({ ...editState, estimatedCost: e.target.value })
-                    }
-                    className="border rounded px-2 py-1 text-sm flex-1"
-                    placeholder="비용 (원)"
-                  />
+            /* 편집 모드 */
+            <li key={activity.id} style={{
+              borderRadius: '8px', border: '1px solid var(--accent-blue)',
+              background: 'var(--blue-dim)', padding: '12px',
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <input value={editState.title}
+                  onChange={(e) => setEditState({ ...editState, title: e.target.value })}
+                  placeholder="장소명" style={{ width: '100%', padding: '7px 10px', fontSize: '13px' }} />
+                <input value={editState.description}
+                  onChange={(e) => setEditState({ ...editState, description: e.target.value })}
+                  placeholder="설명" style={{ width: '100%', padding: '7px 10px', fontSize: '13px' }} />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input value={editState.time}
+                    onChange={(e) => setEditState({ ...editState, time: e.target.value })}
+                    placeholder="HH:MM" style={{ width: '80px', padding: '7px 10px', fontSize: '13px' }} />
+                  <input type="number" value={editState.estimatedCost}
+                    onChange={(e) => setEditState({ ...editState, estimatedCost: e.target.value })}
+                    placeholder="비용" style={{ flex: 1, padding: '7px 10px', fontSize: '13px' }} />
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={saveEdit}
-                    className="px-3 py-1 bg-blue-500 text-white rounded text-sm"
-                  >
-                    저장
-                  </button>
-                  <button
-                    onClick={() => setEditState(null)}
-                    className="px-3 py-1 bg-gray-200 rounded text-sm"
-                  >
-                    취소
-                  </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={saveEdit} style={{
+                    padding: '6px 16px', borderRadius: '6px', border: 'none',
+                    background: 'var(--accent-blue)', color: '#fff',
+                    fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+                  }}>저장</button>
+                  <button onClick={() => setEditState(null)} style={{
+                    padding: '6px 16px', borderRadius: '6px', border: '1px solid var(--border)',
+                    background: 'transparent', color: 'var(--text-2)', fontSize: '12px', cursor: 'pointer',
+                  }}>취소</button>
                 </div>
               </div>
             </li>
           ) : (
+            /* 보기 모드 */
             <li
               key={activity.id}
-              onClick={() => startEdit(activity)}
-              className={`rounded-lg border p-3 cursor-pointer hover:bg-gray-50 transition-colors ${
-                highlightedActivityId === activity.id ? 'ring-2 ring-blue-400' : ''
-              }`}
+              onClick={() => onHighlight(highlightedActivityId === activity.id ? null : activity.id)}
+              style={{
+                borderRadius: '8px',
+                border: `1px solid ${highlightedActivityId === activity.id ? 'var(--accent)' : 'var(--border-light)'}`,
+                background: highlightedActivityId === activity.id ? 'var(--accent-dim)' : 'var(--surface-2)',
+                padding: '10px 12px',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
             >
-              <div className="flex justify-between items-start">
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs text-gray-400 mr-2">{activity.time}</span>
-                  <span className="font-medium text-sm">{activity.title}</span>
-                  {activity.description && (
-                    <p className="text-xs text-gray-500 mt-0.5 ml-8 truncate">
-                      {activity.description}
-                    </p>
-                  )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                  {/* 번호 배지 */}
+                  <span style={{
+                    flexShrink: 0,
+                    width: '20px', height: '20px', borderRadius: '50%',
+                    background: highlightedActivityId === activity.id ? 'var(--accent)' : 'var(--surface)',
+                    border: `1px solid ${highlightedActivityId === activity.id ? 'var(--accent)' : 'var(--border)'}`,
+                    color: highlightedActivityId === activity.id ? '#000' : 'var(--text-2)',
+                    fontSize: '11px', fontWeight: 700,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>{idx + 1}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{
+                        fontSize: '11px', fontWeight: 600, color: 'var(--accent)',
+                        background: 'var(--accent-dim)', padding: '1px 6px', borderRadius: '4px', flexShrink: 0,
+                      }}>{activity.time}</span>
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {activity.title}
+                      </span>
+                    </div>
+                    {activity.description && (
+                      <p style={{ fontSize: '12px', color: 'var(--text-2)', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {activity.description}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 ml-2 shrink-0">
-                  <span className="text-xs text-gray-500">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '8px', flexShrink: 0 }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-2)', fontWeight: 500 }}>
                     ₩{activity.estimatedCost.toLocaleString()}
                   </span>
+                  {/* 편집 버튼 */}
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      deleteActivity(activity.id)
+                    onClick={(e) => { e.stopPropagation(); startEdit(activity) }}
+                    title="편집"
+                    style={{
+                      background: 'none', border: 'none', color: 'var(--text-muted)',
+                      cursor: 'pointer', fontSize: '13px', padding: '0 2px', transition: 'color 0.15s',
                     }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent-blue)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                  >✎</button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); deleteActivity(activity.id) }}
                     aria-label="삭제"
-                    className="text-gray-300 hover:text-red-400 text-base leading-none"
-                  >
-                    ×
-                  </button>
+                    style={{
+                      background: 'none', border: 'none', color: 'var(--text-muted)',
+                      cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '0 2px', transition: 'color 0.15s',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--danger)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                  >×</button>
                 </div>
               </div>
             </li>

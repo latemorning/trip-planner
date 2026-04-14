@@ -7,6 +7,10 @@ const geist = Geist({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: '여행 플래너',
   description: 'AI가 만드는 나만의 국내 여행 일정',
+  icons: {
+    icon: '/icon.svg',
+    apple: '/icon.svg',
+  },
 }
 
 export default function RootLayout({
